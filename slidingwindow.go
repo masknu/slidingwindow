@@ -90,7 +90,9 @@ func (lim *Limiter) SetLimit(newLimit int64) {
 
 // Allow is shorthand for AllowN(time.Now(), 1).
 func (lim *Limiter) Allow() bool {
-	return lim.AllowN(time.Now(), 1)
+	// return lim.AllowN(time.Now(), 1)
+	// use low latency version here
+	return lim.AllowOne(time.Now())
 }
 
 // AllowOne is shorthand for AllowN(time.Now(), 1).
