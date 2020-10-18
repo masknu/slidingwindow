@@ -3,6 +3,8 @@ package slidingwindow
 import (
 	"sync"
 	"time"
+
+	"go.uber.org/atomic"
 )
 
 // Window represents a fixed-window.
@@ -32,8 +34,9 @@ type StopFunc func()
 type NewWindow func() (Window, StopFunc)
 
 type Limiter struct {
-	size  time.Duration
-	limit int64
+	nextAllowTime atomic.Int64
+	size          time.Duration
+	limit         int64
 
 	mu sync.Mutex
 
@@ -88,6 +91,55 @@ func (lim *Limiter) SetLimit(newLimit int64) {
 // Allow is shorthand for AllowN(time.Now(), 1).
 func (lim *Limiter) Allow() bool {
 	return lim.AllowN(time.Now(), 1)
+}
+
+// AllowOne is shorthand for AllowN(time.Now(), 1).
+func (lim *Limiter) AllowOne(now time.Time) bool {
+	prevAllowTime := lim.nextAllowTime.Load()
+	// check time condition first, fast fail
+	if prevAllowTime > now.UnixNano() {
+		return false
+	}
+
+	lim.mu.Lock()
+	defer lim.mu.Unlock()
+
+	defer lim.curr.Sync(now)
+	lim.advance(now)
+
+	prevWeightCount := (lim.limit - lim.curr.Count() - 1)
+
+	// we don't Sync here, current window is full
+	if prevWeightCount < 0 {
+		// reached limit
+		// set time to next window start
+		lim.nextAllowTime.Store(lim.curr.Start().Add(lim.size).UnixNano())
+		return false
+	}
+
+	if prevWeightCount == 0 || prevWeightCount >= lim.prev.Count() {
+		lim.curr.AddCount(1)
+		return true
+	}
+
+	// case 0 < prevWeightCount <= lim.prev.Count():
+	var x time.Duration
+	if lim.prev.Count() > 0 {
+		x = time.Duration(float64(lim.size) * float64(prevWeightCount) / float64(lim.prev.Count()))
+	} else if lim.curr.Count()+1 <= lim.limit {
+		lim.curr.AddCount(1)
+		return true
+	}
+
+	currAllowTime := lim.curr.Start().Add(lim.size - x).UnixNano()
+	lim.nextAllowTime.Store(currAllowTime)
+
+	if prevAllowTime >= currAllowTime {
+		lim.curr.AddCount(1)
+		return true
+	}
+
+	return false
 }
 
 // AllowN reports whether n events may happen at time now.
