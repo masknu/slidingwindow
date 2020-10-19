@@ -82,6 +82,7 @@ type SyncWindow struct {
 
 	key    string
 	syncer Synchronizer
+	prev   *LocalWindow
 }
 
 // NewSyncWindow creates an instance of SyncWindow with the given synchronizer.
@@ -92,6 +93,20 @@ func NewSyncWindow(key string, syncer Synchronizer) (*SyncWindow, StopFunc) {
 	}
 
 	w.syncer.Start()
+
+	return w, w.syncer.Stop
+}
+
+// NewSyncWindow creates an instance of SyncWindow with the given synchronizer.
+func NewSyncWindowWithPrev(key string, prev *LocalWindow, syncer Synchronizer) (*SyncWindow, StopFunc) {
+	w := &SyncWindow{
+		key:    key,
+		syncer: syncer,
+		prev:   prev,
+	}
+
+	w.syncer.Start()
+
 	return w, w.syncer.Stop
 }
 
@@ -121,15 +136,18 @@ func (w *SyncWindow) makeSyncRequest() SyncRequest {
 }
 
 func (w *SyncWindow) handleSyncResponse(resp SyncResponse) {
-	if resp.OK && resp.Start == w.LocalWindow.start {
-		// Update the state of the window, only when it has not been reset
-		// during the latest sync.
+	if resp.OK {
+		if resp.Start == w.LocalWindow.start {
+			// Update the state of the window, only when it has not been reset
+			// during the latest sync.
+			// Take the changes accumulated by other limiters into consideration.
+			w.LocalWindow.count += resp.OtherChanges
 
-		// Take the changes accumulated by other limiters into consideration.
-		w.LocalWindow.count += resp.OtherChanges
-
-		// Subtract the amount that has been synced from existing changes.
-		w.changes -= resp.Changes
+			// Subtract the amount that has been synced from existing changes.
+			w.changes -= resp.Changes
+		} else if w.prev != nil && resp.Start == w.prev.start {
+			w.prev.count += resp.OtherChanges
+		}
 	}
 }
 

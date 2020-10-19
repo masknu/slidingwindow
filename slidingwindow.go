@@ -33,6 +33,8 @@ type StopFunc func()
 // the possible sync behaviour within it.
 type NewWindow func() (Window, StopFunc)
 
+type NewWindowWithPrev func(prev *LocalWindow) (Window, StopFunc)
+
 type Limiter struct {
 	nextAllowTime atomic.Int64
 	size          time.Duration
@@ -56,6 +58,26 @@ func NewLimiter(size time.Duration, limit int64, newWindow NewWindow) (*Limiter,
 	// consumes at most one goroutine for the possible sync behaviour within
 	// the current window.
 	prevWin, _ := NewLocalWindow()
+
+	lim := &Limiter{
+		size:  size,
+		limit: limit,
+		curr:  currWin,
+		prev:  prevWin,
+	}
+
+	return lim, currStop
+}
+
+func NewLimiterWithPrev(size time.Duration, limit int64, newWindow NewWindowWithPrev) (*Limiter, StopFunc) {
+	// The previous window is static (i.e. no add changes will happen within it),
+	// so we always create it as an instance of LocalWindow.
+	//
+	// In this way, the whole limiter, despite containing two windows, now only
+	// consumes at most one goroutine for the possible sync behaviour within
+	// the current window.
+	prevWin, _ := NewLocalWindow()
+	currWin, currStop := newWindow(prevWin)
 
 	lim := &Limiter{
 		size:  size,
