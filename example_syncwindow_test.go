@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis"
-	sw "github.com/masknus/slidingwindow"
+	sw "github.com/masknu/slidingwindow"
 )
 
 // RedisDatastore is a reference implementation of the Redis-based datastore,
