@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"time"
 
-	sw "github.com/RussellLuo/slidingwindow"
 	"github.com/go-redis/redis"
+	sw "github.com/masknus/slidingwindow"
 )
 
 // RedisDatastore is a reference implementation of the Redis-based datastore,

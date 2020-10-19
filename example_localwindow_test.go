@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	sw "github.com/RussellLuo/slidingwindow"
+	sw "github.com/masknu/slidingwindow"
 )
 
 func Example_localWindow() {
