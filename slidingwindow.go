@@ -37,8 +37,11 @@ type NewWindowWithPrev func(prev *LocalWindow) (Window, StopFunc)
 
 type Limiter struct {
 	nextAllowTime atomic.Int64
-	size          time.Duration
-	limit         int64
+	// it'd be better to add [7]int64 here to occupy a whole cache line
+	_     [7]int64
+	limit atomic.Int64
+	_     [7]int64
+	size  time.Duration
 
 	mu sync.Mutex
 
@@ -60,11 +63,12 @@ func NewLimiter(size time.Duration, limit int64, newWindow NewWindow) (*Limiter,
 	prevWin, _ := NewLocalWindow()
 
 	lim := &Limiter{
-		size:  size,
-		limit: limit,
-		curr:  currWin,
-		prev:  prevWin,
+		size: size,
+		// limit: limit,
+		curr: currWin,
+		prev: prevWin,
 	}
+	lim.limit.Store(limit)
 
 	return lim, currStop
 }
@@ -80,11 +84,12 @@ func NewLimiterWithPrev(size time.Duration, limit int64, newWindow NewWindowWith
 	currWin, currStop := newWindow(prevWin)
 
 	lim := &Limiter{
-		size:  size,
-		limit: limit,
-		curr:  currWin,
-		prev:  prevWin,
+		size: size,
+		// limit: limit,
+		curr: currWin,
+		prev: prevWin,
 	}
+	lim.limit.Store(limit)
 
 	return lim, currStop
 }
@@ -98,16 +103,18 @@ func (lim *Limiter) Size() time.Duration {
 
 // Limit returns the maximum events permitted to happen during one window size.
 func (lim *Limiter) Limit() int64 {
-	lim.mu.Lock()
-	defer lim.mu.Unlock()
-	return lim.limit
+	// lim.mu.Lock()
+	// defer lim.mu.Unlock()
+	// return lim.limit
+	return lim.limit.Load()
 }
 
 // SetLimit sets a new Limit for the limiter.
 func (lim *Limiter) SetLimit(newLimit int64) {
-	lim.mu.Lock()
-	defer lim.mu.Unlock()
-	lim.limit = newLimit
+	// lim.mu.Lock()
+	// defer lim.mu.Unlock()
+	// lim.limit = newLimit
+	lim.limit.Store(newLimit)
 }
 
 // Allow is shorthand for AllowN(time.Now(), 1).
@@ -130,8 +137,9 @@ func (lim *Limiter) AllowOne(now time.Time) bool {
 
 	defer lim.curr.Sync(now)
 	lim.advance(now)
+	limit := lim.limit.Load()
 
-	prevWeightCount := (lim.limit - lim.curr.Count() - 1)
+	prevWeightCount := (limit - lim.curr.Count() - 1)
 
 	// we don't Sync here, current window is full
 	if prevWeightCount < 0 {
@@ -150,7 +158,7 @@ func (lim *Limiter) AllowOne(now time.Time) bool {
 	var x time.Duration
 	if lim.prev.Count() > 0 {
 		x = time.Duration(float64(lim.size) * float64(prevWeightCount) / float64(lim.prev.Count()))
-	} else if lim.curr.Count()+1 <= lim.limit {
+	} else if lim.curr.Count()+1 <= limit {
 		lim.curr.AddCount(1)
 		return true
 	}
@@ -170,6 +178,7 @@ func (lim *Limiter) AllowOne(now time.Time) bool {
 func (lim *Limiter) AllowN(now time.Time, n int64) bool {
 	lim.mu.Lock()
 	defer lim.mu.Unlock()
+	limit := lim.limit.Load()
 
 	lim.advance(now)
 
@@ -180,7 +189,7 @@ func (lim *Limiter) AllowN(now time.Time, n int64) bool {
 	// Trigger the possible sync behaviour.
 	defer lim.curr.Sync(now)
 
-	if count+n > lim.limit {
+	if count+n > limit {
 		return false
 	}
 
