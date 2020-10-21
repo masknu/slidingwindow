@@ -119,9 +119,9 @@ func (lim *Limiter) Allow() bool {
 
 // AllowOne is shorthand for AllowN(time.Now(), 1).
 func (lim *Limiter) AllowOne(now time.Time) bool {
-	prevAllowTime := lim.nextAllowTime.Load()
+	presentTime := now.UnixNano()
 	// check time condition first, fast fail
-	if prevAllowTime > now.UnixNano() {
+	if lim.nextAllowTime.Load() > now.UnixNano() {
 		return false
 	}
 
@@ -158,7 +158,7 @@ func (lim *Limiter) AllowOne(now time.Time) bool {
 	currAllowTime := lim.curr.Start().Add(lim.size - x).UnixNano()
 	lim.nextAllowTime.Store(currAllowTime)
 
-	if prevAllowTime >= currAllowTime {
+	if presentTime >= currAllowTime {
 		lim.curr.AddCount(1)
 		return true
 	}
